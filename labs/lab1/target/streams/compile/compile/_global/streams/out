@@ -1,0 +1,4 @@
+[error] /home/david/edan26-multicore/labs/lab1/preflow.scala:57:15: not found: type Recieve
+[error] 	def receive: Recieve = {
+[error] 	             ^
+[error] one error found
