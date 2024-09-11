@@ -1,0 +1,93 @@
+# === Scala === #
+# Binaries and caches
+*.class
+*.log
+*.cache
+*.diff
+*.err
+*.out
+
+# Build directories
+target/
+project/target/
+project/project/
+
+# IDEs
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# SBT directories
+lib_managed/
+src_managed/
+project/project/
+
+# Coursier cache
+.coursier/
+
+# Metals and Bloop (for VS Code and other editors)
+.metals/
+.bloop/
+.bsp/
+
+# Ammonite REPL history and cache
+.amm/
+.repl/
+
+# === C === #
+# Object files, shared and static libraries
+*.o
+*.so
+*.a
+*.dylib
+
+# Executable files
+*.out
+*.exe
+*.dll
+
+# CMake
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+
+# Auto-generated files from configure scripts
+config.log
+config.status
+autom4te.cache/
+*.m4
+
+# === Java === #
+# Compiled class files
+*.class
+
+# Log files
+*.log
+
+# BlueJ files
+*.ctxt
+
+# Maven
+target/
+
+# Gradle
+.gradle/
+build/
+
+# Eclipse and IntelliJ IDEA files
+.classpath
+.project
+.settings/
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# NetBeans
+nbproject/private/
+build/
+nbbuild/
+dist/
+nbdist/
