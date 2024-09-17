@@ -9,6 +9,10 @@ import scala.concurrent.duration._
 import scala.language.postfixOps
 import scala.io._
 import scala.util.{Success, Failure}
+<<<<<<< HEAD
+=======
+import scala.collection.mutable
+>>>>>>> 78cc9d5 (infiltration)
 
 case class Flow(f: Int)
 case class Debug(debug: Boolean)
@@ -16,7 +20,12 @@ case class Control(control:ActorRef)
 case class Source(n: Int)
 
 case class Push(a: Edge, h: Int, df: Int)
+<<<<<<< HEAD
 case class Rollback(a: Edge, df: Int)
+=======
+case class Rollback(a: Edge, df: Int, h: Int)
+case class Ok(h: Int)
+>>>>>>> 78cc9d5 (infiltration)
 
 case object Print
 case object Start
@@ -39,8 +48,14 @@ class Node(val index: Int) extends Actor {
 	var	source:Boolean	= false		/* true if we are the source.					*/
 	var	sink:Boolean	= false		/* true if we are the sink.					*/
 	var	edge: List[Edge] = Nil		/* adjacency list with edge objects shared with other nodes.	*/
+<<<<<<< HEAD
 	var	debug = true			/* to enable printing.						*/
 
+=======
+	var	debug = false			/* to enable printing.						*/
+
+	val n_heights = mutable.Map[ActorRef, Int]()
+>>>>>>> 78cc9d5 (infiltration)
     var pushes = 0
 	
 	def min(a:Int, b:Int) : Int = { if (a < b) a else b }
@@ -88,7 +103,103 @@ class Node(val index: Int) extends Actor {
             this.e -= a.c
 
             other_node ! Push(a, this.h, a.c)
+<<<<<<< HEAD
         }
+=======
+			control ! Flow(this.e)
+        }
+	}
+
+    case Discharge => {
+        enter("discharge")
+        var p: List[Edge] = edge   // pointer into edge
+        var a: Edge = null        // edge to work with
+		
+        while (p != Nil && e > 0) {
+            a = p.head
+            p = p.tail
+
+			var other_node: ActorRef = other(a, self)
+			var df = 0
+			val neighbour_height = n_heights.getOrElse(other_node, -1)
+
+			if (h > neighbour_height) {
+				if(self == a.u && a.f < a.c) { // we should push positive flow
+					df = min(e, a.c - a.f)
+					this.e -= df
+
+                    if (debug)
+					    println("Pushing " + df + " from " + index + " to " + other_node + " with height " + neighbour_height + " " + n_heights)
+
+                    pushes += 1
+					other_node ! Push(a, h, df)
+				} else if (self == a.v && -a.f < a.c){
+                    df = min(e, a.f + a.c)
+					this.e -= df
+
+                    if (debug)
+					    println("Pushing " + -df + " from " + index + " to " + other_node + " with height " + neighbour_height + " " + n_heights)
+                    if (debug)
+                        println(a.u.path.name + " -> " + a.v.path.name + ": " + a.f + "/" + a.c)
+
+                    pushes += 1
+					other_node ! Push(a, h, -df)
+				}
+			}
+        }
+		if (e > 0 && pushes == 0) {
+			relabel
+			self ! Discharge 
+		}
+        exit("discharge")
+    }
+
+    case Push(a:Edge, h:Int, df:Int) => {
+        enter("push")
+
+        n_heights(sender) = h
+
+        if (h > this.h){
+            if (debug)
+			    println("Push accepted " + df)
+
+			e += df.abs
+            a.f += df
+
+			sender ! Ok(h)
+			if (!sink && !source) {
+				self ! Discharge
+			} else {
+				control ! Flow(e)
+			}
+		} else {
+            if (debug)
+			    println("Push denied, sending rollback to " + sender)
+            sender ! Rollback(a, df, this.h)
+		}
+        exit("push")
+    }
+
+    case Rollback(a:Edge, df:Int, h:Int) => {
+        enter("rollback")
+        this.e += df.abs
+
+		n_heights(sender) = h
+        pushes -= 1
+
+		self ! Discharge
+
+        exit("rollback")
+    }
+
+	case Ok(h:Int) => {
+		enter("ok")
+		n_heights(sender) = h
+        pushes -= 1
+        if (e > 0 && pushes == 0)
+            self ! Discharge
+		exit("ok")
+>>>>>>> 78cc9d5 (infiltration)
 	}
 
     case Discharge => {
@@ -154,7 +265,13 @@ class Preflow extends Actor {
 	var	n = 0;			            // number of vertices in the graph.
 	var	edge:Array[Edge] = null	    // edges in the graph.
 	var	node:Array[ActorRef] = null	// vertices in the graph.
+<<<<<<< HEAD
 	var	ret:ActorRef = null	        // Actor to send result to.					*/
+=======
+	var	ret:ActorRef = null	        // Actor to send result to.
+	var sf: Int = 0
+	var tf: Int = 0			
+>>>>>>> 78cc9d5 (infiltration)
 
 	def receive = {
 	    case node:Array[ActorRef]	=> {
@@ -169,12 +286,25 @@ class Preflow extends Actor {
 	    case edge:Array[Edge] => this.edge = edge
 
 	    case Flow(f:Int) => {
+<<<<<<< HEAD
 	    	  ret ! f			/* somebody (hopefully the sink) told us its current excess preflow. */
+=======
+			if (sender == node(s)) {
+				sf = f.abs
+			}
+			if (sender == node(t)) {
+				tf = f
+			}
+			if (sf == tf) {
+				ret ! sf
+            }
+>>>>>>> 78cc9d5 (infiltration)
 	    }
 
 	    case Maxflow => {
             println("Maxflow start")
 	        ret = sender
+<<<<<<< HEAD
             node(s) ! Source(n)
             node(t) ! Sink
 	    	// node(t) ! Excess	/* ask sink for its excess preflow (which certainly still is zero). */
@@ -206,6 +336,10 @@ class Preflow extends Actor {
 
             // sender ! (node(t) ? Excess)
             node(t) ! Excess
+=======
+            node(t) ! Sink            
+            node(s) ! Source(n)
+>>>>>>> 78cc9d5 (infiltration)
 	    }
     }
 }
