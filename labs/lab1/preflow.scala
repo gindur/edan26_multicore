@@ -103,9 +103,6 @@ class Node(val index: Int) extends Actor {
             this.e -= a.c
 
             other_node ! Push(a, this.h, a.c)
-<<<<<<< HEAD
-        }
-=======
 			control ! Flow(this.e)
         }
 	}
@@ -199,7 +196,6 @@ class Node(val index: Int) extends Actor {
         if (e > 0 && pushes == 0)
             self ! Discharge
 		exit("ok")
->>>>>>> 78cc9d5 (infiltration)
 	}
 
     case Discharge => {
@@ -265,13 +261,9 @@ class Preflow extends Actor {
 	var	n = 0;			            // number of vertices in the graph.
 	var	edge:Array[Edge] = null	    // edges in the graph.
 	var	node:Array[ActorRef] = null	// vertices in the graph.
-<<<<<<< HEAD
-	var	ret:ActorRef = null	        // Actor to send result to.					*/
-=======
 	var	ret:ActorRef = null	        // Actor to send result to.
 	var sf: Int = 0
 	var tf: Int = 0			
->>>>>>> 78cc9d5 (infiltration)
 
 	def receive = {
 	    case node:Array[ActorRef]	=> {
@@ -286,9 +278,6 @@ class Preflow extends Actor {
 	    case edge:Array[Edge] => this.edge = edge
 
 	    case Flow(f:Int) => {
-<<<<<<< HEAD
-	    	  ret ! f			/* somebody (hopefully the sink) told us its current excess preflow. */
-=======
 			if (sender == node(s)) {
 				sf = f.abs
 			}
@@ -298,48 +287,13 @@ class Preflow extends Actor {
 			if (sf == tf) {
 				ret ! sf
             }
->>>>>>> 78cc9d5 (infiltration)
 	    }
 
 	    case Maxflow => {
             println("Maxflow start")
 	        ret = sender
-<<<<<<< HEAD
-            node(s) ! Source(n)
-            node(t) ! Sink
-	    	// node(t) ! Excess	/* ask sink for its excess preflow (which certainly still is zero). */
-
-            var sf = 0
-            var tf = 0
-            
-	        implicit val time = Timeout(1 seconds);
-            println("Discharge loop start")
-            do {
-                for (u <- node) {
-                    if (u != node(s))
-                        u ! Discharge
-                }
-
-                implicit val ec = ExecutionContext.global
-
-                val source_flow = node(s) ? Excess2
-				sf = Await.result(source_flow, time.duration) match {
-				case i: Int => i
-				}
-
-				val sink_flow = node(t) ? Excess2
-				tf = Await.result(sink_flow, time.duration) match {
-				case i: Int => i
-}
-
-            } while (sf.abs != tf)
-
-            // sender ! (node(t) ? Excess)
-            node(t) ! Excess
-=======
             node(t) ! Sink            
             node(s) ! Source(n)
->>>>>>> 78cc9d5 (infiltration)
 	    }
     }
 }
