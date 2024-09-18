@@ -73,7 +73,6 @@ struct list_t {
 };
 
 struct node_t {
-	int     i;  /* index of the node. */
 	int		h;	/* height.			*/
 	int		e;	/* excess flow.			*/
 	list_t*		edge;	/* adjacency list.		*/
