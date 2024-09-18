@@ -92,3 +92,6 @@ build/
 nbbuild/
 dist/
 nbdist/
+
+# VS Code
+.vscode/
