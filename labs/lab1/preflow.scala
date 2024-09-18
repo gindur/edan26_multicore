@@ -9,10 +9,7 @@ import scala.concurrent.duration._
 import scala.language.postfixOps
 import scala.io._
 import scala.util.{Success, Failure}
-<<<<<<< HEAD
-=======
 import scala.collection.mutable
->>>>>>> 78cc9d5 (infiltration)
 
 case class Flow(f: Int)
 case class Debug(debug: Boolean)
@@ -20,12 +17,8 @@ case class Control(control:ActorRef)
 case class Source(n: Int)
 
 case class Push(a: Edge, h: Int, df: Int)
-<<<<<<< HEAD
-case class Rollback(a: Edge, df: Int)
-=======
 case class Rollback(a: Edge, df: Int, h: Int)
 case class Ok(h: Int)
->>>>>>> 78cc9d5 (infiltration)
 
 case object Print
 case object Start
@@ -48,14 +41,10 @@ class Node(val index: Int) extends Actor {
 	var	source:Boolean	= false		/* true if we are the source.					*/
 	var	sink:Boolean	= false		/* true if we are the sink.					*/
 	var	edge: List[Edge] = Nil		/* adjacency list with edge objects shared with other nodes.	*/
-<<<<<<< HEAD
-	var	debug = true			/* to enable printing.						*/
-
-=======
 	var	debug = false			/* to enable printing.						*/
 
 	val n_heights = mutable.Map[ActorRef, Int]()
->>>>>>> 78cc9d5 (infiltration)
+
     var pushes = 0
 	
 	def min(a:Int, b:Int) : Int = { if (a < b) a else b }
