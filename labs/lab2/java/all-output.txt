@@ -1,0 +1,5 @@
+Starting main
+Starting main 2
+Created graph
+t = 0.646 s
+f = 9924

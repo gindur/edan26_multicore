@@ -62,6 +62,11 @@ class Graph {
 	{
 		boolean pushed = false;
 		lockNodes(u,v);
+
+		if (u.h == 0) {
+			u.h = 1;
+		}
+
 		if (u.h > v.h && Math.abs(u.e) > 0 && getPerspectiveFlow(u, a) < a.c){
 			int df = Math.min(u.e, a.c - getPerspectiveFlow(u, a));
 			if (a.u == u)
@@ -122,22 +127,19 @@ class Graph {
 		}
 
 
-		
 		// lock source
 		node[s].lock();
 		try {
 			iter = node[s].adj.listIterator();
 			node[s].h = n;
-			for (int i = 0; iter.hasNext(); ++i) {
-				i %= nthreads;
+			while (iter.hasNext()) {
 				a = iter.next();
+				Node other = other(a, node[s]);
 
 				node[s].e += a.c;
 
-				push(node[s], other(a, node[s]), a);
-				
-				work[i].addExcess(other(a, node[s]));
-				// unlock node[i]
+				push(node[s], other, a);
+				allocateWorkToNextThread(other);
 			}
 		} finally {
 			// unlock source
@@ -229,15 +231,19 @@ class Work extends Thread {
 				if (u == null) {
 					break;
 				}
+
 			}
+
 			boolean pushed = false;
 
 			ListIterator<Edge> iter = u.adj.listIterator();
-			while (iter.hasNext()) {
+			while (iter.hasNext() && u.e > 0) {
 				a = iter.next();
 				v = g.other(a, u);
 
-				Graph.log("Tried pushing to @v" + v.i);
+				Graph.log("Tried pushing: @u" + u.i + " -> @v" + v.i);
+				Graph.log("@u" + u.i + " (h: " + u.h + ", e: " + u.e + "), @v" + v.i + " (h: "+ v.h + ", e: " + v.e + ")");
+				Graph.log("edge: " + a.f + "/" + a.c + "\n");
 				if (g.push(u, v, a)) {
 					Graph.log("Pushed to node @v" + v.i +" from @v" + u.i);
 					pushed = true;
@@ -245,11 +251,28 @@ class Work extends Thread {
 				}
 			}
 
-			if (!pushed)
+			if (!pushed && u.e > 0)
 				u.relabel();
 			
-			if (u.e == 0)
+			if (u.e == 0) {
+				Graph.log("@u" + u.i + " has no excess, go to next node @u");
+				if (u.next != null)
+					Graph.log(""+u.next.i);
+				else
+					Graph.log("void");
+				var temp = u;
 				u = u.next;
+				temp.next = null;
+
+
+				// int i = 0;
+				// var temp2 = temp;
+				// while (temp2.next != null) {
+				// 	i++;
+				// 	temp2 = temp2.next;
+				// }
+				// Graph.log("excess list is " + i + " long.");
+			}
 			
     	} 
 	}
@@ -259,10 +282,16 @@ class Work extends Thread {
 	}
 
 	public synchronized void addExcess(Node u) {
-		u.next = this.excess;
-		this.excess = u;
-		Graph.log("Adding node @v" + u.i + " to excess. " + excess);
-		run();
+		if (excess == null || u.i != excess.i) {
+			if (u.next != null) {
+				// Exists in other excess
+				return;
+			}
+			u.next = this.excess;
+			this.excess = u;
+			Graph.log("Adding node @v" + u.i + " to excess. " + excess);
+			run();
+		}
 	}
 }
 
