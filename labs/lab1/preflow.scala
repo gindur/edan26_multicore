@@ -220,11 +220,11 @@ class Node(val index: Int) extends Actor {
         if (h > this.h)
             this.e += df
         else
-            sender ! Rollback(a, df)
+            sender ! Rollback(a, df, this.h)
         exit("push")
     }
 
-    case Rollback(a:Edge, df:Int) => {
+    case Rollback(a:Edge, df:Int, h:Int) => {
         enter("rollback")
         a.f -= df
         this.e += df

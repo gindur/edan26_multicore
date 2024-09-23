@@ -1,2 +1,4 @@
-[warn] there was one deprecation warning (since 2.13.0); re-run with -deprecation for details
+[warn] /home/david/edan26-multicore/labs/lab1/preflow.scala:190:23: unreachable code
+[warn]     case Discharge => {
+[warn]                       ^
 [warn] one warning found

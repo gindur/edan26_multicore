@@ -1,12 +1,1 @@
 copying runtime jar...
-[info] welcome to sbt 1.3.13 (Arch Linux Java 11.0.24)
-[info] loading project definition from /home/Kojjan/Documents/School/EDAN26 - Multicore Programming/edan26_multicore/labs/lab1/project
-[info] loading settings for project lab1 from build.sbt ...
-[info] running main 
-Preflow Push Algorithm
-10:32:08.257 [Main-akka.actor.default-dispatcher-5] INFO akka.event.slf4j.Slf4jLogger - Slf4jLogger started
-Start
-Maxflow start
-End
-f = 10932
-t = 4.609 s
