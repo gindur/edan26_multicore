@@ -29,8 +29,8 @@
  
 #include <alloca.h>
 #include <assert.h>
+#include <bits/pthreadtypes.h>
 #include <ctype.h>
-#include <mutex>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -39,7 +39,7 @@
 
 #include <pthread.h>
 
-#define PRINT		1	/* enable/disable prints. */
+#define PRINT	0	/* enable/disable prints. */
 
 /* the funny do-while next clearly performs one iteration of the loop.
  * if you are really curious about why there is a loop, please check
@@ -78,8 +78,9 @@ struct list_t {
 };
 
 struct node_t {
-	int		h;	/* height.			*/
-	int		e;	/* excess flow.			*/
+	int			h;		/* height.			*/
+	int			e;		/* excess flow.			*/
+	int			inQueue;/* is in someones excess list */
 	list_t*		edge;	/* adjacency list.		*/
 	node_t*		next;	/* with excess preflow.		*/
 	pthread_mutex_t nodeLock;
@@ -88,17 +89,17 @@ struct node_t {
 struct edge_t {
 	node_t*		u;	/* one of the two nodes.	*/
 	node_t*		v;	/* the other. 			*/
-	int		f;	/* flow > 0 if from u to v.	*/
-	int		c;	/* capacity.			*/
+	int			f;	/* flow > 0 if from u to v.	*/
+	int			c;	/* capacity.			*/
 };
 
 struct graph_t {
 	int		n;	/* nodes.			*/
 	int		m;	/* edges.			*/
+	int    	nthreads;
 	int     totalJobs;
-	int    nthreads;
 	pthread_mutex_t totalJobsMutex;
-	worker_t* worker;
+	worker_t* 	worker;
 	node_t*		v;	/* array of n nodes.		*/
 	edge_t*		e;	/* array of m edges.		*/
 	node_t*		s;	/* source.			*/
@@ -137,8 +138,6 @@ struct worker_t {
 
 static char* progname;
 
-#if PRINT
-
 static int id(graph_t* g, node_t* v)
 {
 	/* return the node index for v.
@@ -163,7 +162,6 @@ static int id(graph_t* g, node_t* v)
 
 	return v - g->v;
 }
-#endif
 
 void error(const char* fmt, ...)
 {
@@ -282,6 +280,20 @@ static void* xcalloc(size_t n, size_t s)
 	return p;
 }
 
+static void mutex_lock(pthread_mutex_t* m, const char* name)
+{
+	/* lock a mutex and check that it was successful.
+	 *
+	 * the pthread_mutex_lock function returns 0 if the lock
+	 * was successful and otherwise an error code.
+	 *
+	 */
+	pr("locking mutex %s\n", name);
+	if (pthread_mutex_lock(m) != 0)
+		error("mutex lock failed");
+
+}
+
 static void add_edge(node_t* u, edge_t* e)
 {
 	list_t*		p;
@@ -312,7 +324,7 @@ static void connect(node_t* u, node_t* v, int c, edge_t* e)
 	add_edge(v, e);
 }
 
-static graph_t* new_graph(FILE* in, int n, int m)
+static graph_t* new_graph(FILE* in, int n, int m, int nthreads)
 {
 	graph_t*	g;
 	node_t*		u;
@@ -333,13 +345,30 @@ static graph_t* new_graph(FILE* in, int n, int m)
 	g->s = &g->v[0];
 	g->t = &g->v[n-1];
 
+	g->totalJobs = 0;
+	g->nthreads = nthreads;
+
+	pthread_mutex_init(&g->totalJobsMutex, NULL);
+
+	g->worker = xcalloc(nthreads, sizeof(worker_t));
+	for (int i = 0; i < nthreads; i += 1) {
+		g->worker[i].i = i;
+		g->worker[i].g = g;
+		pthread_mutex_init(&g->worker[i].excessMutex, NULL);
+	}
+	
+	for (i = 0; i < n; i += 1) {
+		g->v[i].inQueue = 0;
+		pthread_mutex_init(&g->v[i].nodeLock, NULL);
+	}
+
 	for (i = 0; i < m; i += 1) {
 		a = next_int();
 		b = next_int();
 		c = next_int();
 		u = &g->v[a];
 		v = &g->v[b];
-		connect(u, v, c, g->e+i);
+		connect(u, v, c, &g->e[i]);
 	}
 
 	return g;
@@ -348,8 +377,6 @@ static graph_t* new_graph(FILE* in, int n, int m)
 static void push(graph_t* g, node_t* u, node_t* v, edge_t* e)
 {
 	int		d;	/* remaining capacity of the edge. */
-	pr("push from %d to %d: ", id(g, u), id(g, v));
-	pr("f = %d, c = %d, so ", e->f, e->c);
 	
 	if (u == e->u) {
 		d = MIN(u->e, e->c - e->f);
@@ -359,7 +386,8 @@ static void push(graph_t* g, node_t* u, node_t* v, edge_t* e)
 		e->f -= d;
 	}
 
-	pr("pushing %d\n", d);
+	pr("push from %d to %d: ", id(g, u), id(g, v));
+	pr("f = %d, c = %d, so pushing %d\n", e->f, e->c, d);
 
 	u->e -= d;
 	v->e += d;
@@ -387,39 +415,80 @@ static node_t* other(node_t* u, edge_t* e)
 		return e->u;
 }
 
-void allocateWorkToThreads(graph_t* g, node_t* u)
-{
-	pthread_mutex_t mutex = g->totalJobsMutex;
-	if (u != g->s && u != g->t) {
-		pthread_mutex_lock(&mutex);
-		g->totalJobs += 1;
+static int getNextThreadIndex(graph_t* g) {
+		pthread_mutex_lock(&g->totalJobsMutex);
 		int index = g->totalJobs % g->nthreads;
-		pthread_mutex_unlock(&mutex);
+		g->totalJobs += 1;
+		pthread_mutex_unlock(&g->totalJobsMutex);
 
-		pthread_mutex_lock(&g->worker[index].excessMutex);
-		u->next = g->worker[index].excess;
-		g->worker[index].excess = u;
-		pthread_mutex_unlock(&g->worker[index].excessMutex);
+		return index;
+}
+
+void allocateWorkToThreads(graph_t* g, node_t* u, int index)
+{
+	if (u != g->s && u != g->t) {
+		// pthread_mutex_lock(&g->totalJobsMutex);
+		// int index = g->totalJobs % g->nthreads;
+		// g->totalJobs += 1;
+		// pthread_mutex_unlock(&g->totalJobsMutex);
+
+		// pr("trying to lock excessMutex @%d\n", index);
+		// pthread_mutex_lock(&g->worker[index].excessMutex);
+		node_t* excess = g->worker[index].excess;
+		
+		if (excess == NULL || id(g, u) != id(g,excess)) {
+			if(u->inQueue) {
+				pr("already allocated somewhere else.\n");
+
+				// Return locks before returning
+				// pthread_mutex_unlock(&g->worker[index].excessMutex);
+				return;
+			}
+			u->next = g->worker[index].excess;
+			g->worker[index].excess = u;
+			u->inQueue = 1;
+			pr("allocated node u%d (should be %d) to thread @%d\n", id(g, g->worker[index].excess), id(g,u), index);
+		}		
+
+		// pthread_mutex_unlock(&g->worker[index].excessMutex);
+		// pr("unlocking excessMutex @%d\n", index);
+	} else {
+		pr("skipping allocation of s or t\n");
 	}
 }
 
-void lockNodes(graph_t* g,node_t* u, node_t* v){
+void lockNodes(graph_t* g, node_t* u, node_t* v){
 	if (id(g,u) < id(g,v)) {
+		// pr("Attempting to lock u%d and v%d\n", id(g, u), id(g, v));
 		pthread_mutex_lock(&u->nodeLock);
 		pthread_mutex_lock(&v->nodeLock);
+		// pr("Locked u%d and v%d\n", id(g, u), id(g, v));
 	} else {
+		// pr("Attempting to lock v%d and u%d\n", id(g, v), id(g, u));
 		pthread_mutex_lock(&v->nodeLock);
 		pthread_mutex_lock(&u->nodeLock);
+		// pr("Locked v%d and u%d\n", id(g, v), id(g, u));
 	}
 }
 
-void unlockNodes(graph_t* g,node_t* u, node_t* v){
+void unlockNodes(graph_t* g, node_t* u, node_t* v){
 	if (id(g,u) < id(g,v)) {
+		// pr("Unlocking u%d and v%d\n", id(g, u), id(g, v));
 		pthread_mutex_unlock(&v->nodeLock);
 		pthread_mutex_unlock(&u->nodeLock);
+		// pr("Unlocked u%d and v%d\n", id(g, u), id(g, v));
 	} else {
+		// pr("Unlocking v%d and u%d\n", id(g, v), id(g, u));
 		pthread_mutex_unlock(&u->nodeLock);
 		pthread_mutex_unlock(&v->nodeLock);
+		// pr("Unlocked v%d and u%d\n", id(g, v), id(g, u));
+	}
+}
+
+void *printGraphState(graph_t* g){
+	for (int i = 0; i < g->n; i += 1) {
+		node_t *node = &g->v[i];
+		pr("Node %d: h=%d, e=%d\n", i, node->h, node->e);
 	}
 }
 
@@ -428,23 +497,44 @@ void *work(void* args)
 	/* loop until only s and/or t have excess preflow. */
 	worker_t* worker = (worker_t*) args;
 	graph_t* g = worker->g;
-	node_t* u = worker->excess;
 	node_t* v = NULL;
 	edge_t* e = NULL;
 	list_t* p = NULL;
 	int		b;
 
+	int stuck = 0;
+
 	while (1) {
 		pthread_mutex_lock(&worker->excessMutex);
-		if (u == NULL) {
-			break;
+		node_t * u = worker->excess;
+		if (worker->excess == NULL) {
+			pthread_mutex_unlock(&worker->excessMutex);
+			lockNodes(g, g->s, g->t);
+			//pr("s->e = %d, t->e = %d\n", g->s->e, g->t->e);
+			if (abs(g->s->e) == g->t->e){
+				unlockNodes(g, g->s, g->t);
+				pr("killed thread @%d, s->e = %d, t->e = %d\n", worker->i, g->s->e, g->t->e);
+				return (void *) NULL;
+			} else {
+				unlockNodes(g, g->s, g->t);
+				if (!stuck) {
+					// printGraphState(g);
+					pr("@T%d: thread has no more jobs right now.\n", worker->i);
+					stuck = 1;
+				}
+				continue;
+			}
 		}
 		pthread_mutex_unlock(&worker->excessMutex);
+		if (stuck) {
+			pr("@T%d: Thread got a new job, no longer stuck.\n", worker->i);
+			stuck = 0;
+		}
+
+		pr("@T%d: running loop\n", worker->i);
 
 		/* u is any node with excess preflow. */
-
-		pr("selected u = %d with ", id(g, u));
-		pr("h = %d and e = %d\n", u->h, u->e);
+		pr("@T%d: job @U = %d with h = %d and e = %d.\n", worker->i,id(g, u), u->h, u->e);
 
 		int pushed = 0;
 
@@ -462,25 +552,50 @@ void *work(void* args)
 				v = e->u;
 				b = -1;
 			}
+			
 
+			// Find next thread to allocate work to
+			int index = getNextThreadIndex(g);
+			// pr("trying to lock excessMutex @%d\n", index);
+			pthread_mutex_lock(&g->worker[index].excessMutex);
+
+			//pr("@T%d: Attemping to lock u%d and v%d\n", worker->i, id(g, u), id(g, v));
 			lockNodes(g, u, v);
+			//pr("@T%d: trying to push from u%d to v%d\n", worker->i,id(g, u), id(g, v));
 			if (u->h == 0)
 				u->h = 1;
 
+			//pr("@T%d: if statement incoming: u->h: %d > v->h: %d\n abs(u->e) = %d\n b=%d*e->f=%d < e->c=%d\n",worker->i, u->h, v->h, u->e, b, e->f, e->c);
 			if (u->h > v->h && abs(u->e) > 0 && b * e->f < e->c) {
+				pr("@T%d: pushing from u%d to v%d\n", worker->i, id(g, u), id(g, v));
 				push(g, u, v, e);
 				pushed = 1;
+
+				allocateWorkToThreads(g, v, index);
 			}
+			//pr("@T%d: unlocking u%d and v%d\n", worker->i, id(g, u), id(g, v));
 			unlockNodes(g, u, v);
+
+			pthread_mutex_unlock(&g->worker[index].excessMutex);
+		}
+		
+		if (!pushed && u->e > 0){
+			relabel(g, u);
 		}
 
-		if (!pushed && u->e > 0)
-			relabel(g, u);
-		if (u->e == 0) {
-			node_t* temp = u;
-			u = u->next;
-			temp->next = NULL;
+		pr("@T%d: locking nodeLock for n%d and excess lock.\n", worker->i, id(g,worker->excess));
+		pthread_mutex_lock(&worker->excessMutex);
+		pthread_mutex_lock(&worker->excess->nodeLock);
+		node_t * temp = worker->excess;
+		if (worker->excess->e == 0) {
+			worker->excess = worker->excess->next;
+			temp->next = NULL; // possible data race here, prob need to lock temp (excess)
+			temp->inQueue = 0;
 		}
+		pthread_mutex_unlock(&temp->nodeLock);
+		pthread_mutex_unlock(&worker->excessMutex);
+		pr("@T%d: unlocked nodeLock for n%d and excess mutex\n.", worker->i, id(g, worker->excess));
+
 	}
 }
 	
@@ -492,7 +607,7 @@ int preflow(graph_t* g)
 	edge_t*		e;
 	list_t*		p;
 
-	int nthreads = 10;
+	int nthreads = g->nthreads;
 
 	s = g->s;
 	s->h = g->n;
@@ -503,32 +618,44 @@ int preflow(graph_t* g)
 	 * the edge capacity) from the source to its neighbors.
 	 *
 	 */
-
-	worker_t* worker =  xcalloc(nthreads, sizeof(worker_t));
-	for (int i = 0; i < nthreads; i += 1) {
-		worker[i].i = i;
-		worker[i].g = g;
-	}
 	pthread_t thread[nthreads];
 
+	int totalPushed = 0;
+	while (p != NULL) {
+		e = p->edge;
+		pr("edge %d -> %d\n", id(g, e->u), id(g, e->v));
+		p = p->next;
+		s->e += e->c;
+		totalPushed += e->c;
+
+		node_t* v = other(s, e);
+
+		int index = getNextThreadIndex(g);
+		pthread_mutex_lock(&g->worker[index].excessMutex);
+		lockNodes(g,s,v);
+
+		push(g, s, v, e);
+		allocateWorkToThreads(g, v, index);
+
+		unlockNodes(g,s,v);
+		pthread_mutex_unlock(&g->worker[index].excessMutex);
+	}
+
+	// Establish initial source flow
+	pthread_mutex_lock(&s->nodeLock);
+	s->e -= totalPushed;
+	pthread_mutex_unlock(&s->nodeLock);
+	pr("unlocked source, totalPushed from source initially: %d\n", s->e);
+	
+	// Start working threads
 	for (int i = 0; i < nthreads; i += 1) {
-		if (pthread_create(&thread[i], NULL, work, (void *) &worker[i])) {
+		if (pthread_create(&thread[i], NULL, work, (void *) &g->worker[i])) {
 			error("pthread_create failed");
 		}
 	}
 
-	while (p != NULL) {
-		e = p->edge;
-		p = p->next;
-
-		s->e += e->c;
-
-		node_t* v = other(s, e);
-		push(g, s, v, e);
-		allocateWorkToThreads(g, v);
-	}
-
 	for (int i = 0; i< nthreads; i += 1) {
+		pr("joining thread %d\n", i);
 		if (pthread_join(thread[i], NULL) != 0)  {
 			error("pthread_join failed");
 		}
@@ -543,6 +670,15 @@ static void free_graph(graph_t* g)
 	list_t*		p;
 	list_t*		q;
 
+	
+	pthread_mutex_destroy(&g->totalJobsMutex);
+	for (int i = 0; i < g->nthreads; i++) {
+		pthread_mutex_destroy(&g->worker[i].excessMutex);
+	}
+	for (int i = 0; i < g->n; i++) {
+		pthread_mutex_destroy(&g->v[i].nodeLock);
+	}
+
 	for (i = 0; i < g->n; i += 1) {
 		p = g->v[i].edge;
 		while (p != NULL) {
@@ -554,6 +690,39 @@ static void free_graph(graph_t* g)
 	free(g->v);
 	free(g->e);
 	free(g);
+}
+
+#include <unistd.h> // for sleep function
+
+void *debug_thread(void *arg)
+{
+    graph_t *g = (graph_t *)arg;
+    while (0) {
+        sleep(3); // Sleep for 1 second
+
+        // Lock any mutexes required to safely access g
+        // For example, if you have a mutex for g, lock it here
+        // pthread_mutex_lock(&g->graphLock);
+
+        // Print out the desired values
+        // For example, printing the excess flow and height of all nodes
+
+        printf("Debugging info:\n");
+        for (int i = 0; i < g->n; i++) {
+            node_t *node = &g->v[i];
+
+            // Lock the node's mutex before accessing its data
+            pthread_mutex_lock(&node->nodeLock);
+
+            pr("Node %d: h=%d, e=%d\n", i, node->h, node->e);
+
+            pthread_mutex_unlock(&node->nodeLock);
+        }
+        printf("\n");
+
+    }
+
+    return NULL;
 }
 
 int main(int argc, char* argv[])
@@ -575,7 +744,9 @@ int main(int argc, char* argv[])
 	next_int();
 	next_int();
 
-	g = new_graph(in, n, m);
+	int nthreads = 2;
+
+	g = new_graph(in, n, m, nthreads);
 
 	fclose(in);
 
@@ -584,6 +755,7 @@ int main(int argc, char* argv[])
 	printf("f = %d\n", f);
 
 	free_graph(g);
+	
 
 	return 0;
 }
