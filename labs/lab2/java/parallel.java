@@ -15,6 +15,7 @@ class Graph {
 	int	m;
 	int nthreads;
 	static boolean debug = false;
+	static boolean debug2 = false;
 
 
 	Node	node[];
@@ -35,8 +36,14 @@ class Graph {
 		if (debug)
 			System.out.println(s);
 	}
+
+	static void log2(String s) {
+		if (debug2)
+			System.out.println(s);
+	}
 	
 	synchronized void allocateWorkToNextThread(Node v) {
+		Graph.log("Allocating work to next thread for node @v" + v.i);
 		if (v.i != s && v.i != t) {
 			totalJobs++;
 			work[totalJobs % nthreads].addExcess(v);
@@ -61,7 +68,7 @@ class Graph {
 	boolean push(Node u, Node v, Edge a)
 	{
 		boolean pushed = false;
-		lockNodes(u,v);
+		// lockNodes(u,v);
 
 		if (u.h == 0) {
 			u.h = 1;
@@ -80,11 +87,11 @@ class Graph {
 			pushed = true;
 		}
 		
-		unlockNodes(u,v);
+		// unlockNodes(u,v);
 		return pushed;
 	}
 
-	private void lockNodes(Node u, Node v){
+	void lockNodes(Node u, Node v){
 		if (u.i < v.i){
 			u.lock();
 			v.lock();
@@ -94,7 +101,7 @@ class Graph {
 		}
 	}
 
-	private void unlockNodes(Node u, Node v){
+	void unlockNodes(Node u, Node v){
 		if (u.i < v.i){
 			u.unlock();
 			v.unlock();
@@ -121,12 +128,6 @@ class Graph {
 			log("Creating thread " + i);
 		}
 
-		for (int i = 0; i < nthreads; ++i){
-			work[i].start();
-			log("Starting thread " + i);
-		}
-
-
 		// lock source
 		node[s].lock();
 		try {
@@ -135,20 +136,65 @@ class Graph {
 			while (iter.hasNext()) {
 				a = iter.next();
 				Node other = other(a, node[s]);
-
-				node[s].e += a.c;
-
-				push(node[s], other, a);
+				
+				if (a.u == node[s])
+				a.f = a.c;
+				else
+				a.f = -a.c;
+				
+				node[s].e -= a.c;
+				other.e += a.c;
+				
 				allocateWorkToNextThread(other);
 			}
 		} finally {
 			// unlock source
 			node[s].unlock();
 		}
+		
+		for (int i = 0; i < nthreads; ++i){
+			work[i].start();
+		}
+
+		Graph.log("All nodes pushed from source");
+
+		double start = System.currentTimeMillis();
+		int seconds = 0;
+		while (true) {
+			int sf = node[s].e;
+			int tf = node[t].e;
+
+			if ((System.currentTimeMillis() - start)/50 > seconds) {
+				seconds++;
+				String threadStates = "Thread states:\n";
+				for (int i = 0; i < nthreads; ++i) {
+					threadStates += work[i].getName() + ": " + work[i].getState() + ", has queue: " + (work[i].excessHead != null) + "\n";
+				}
+				String nodesWIthExcess = "Nodes with excess:\n";
+				for (int i = 0; i < n; ++i) {
+					if (node[i].e > 0) {
+						nodesWIthExcess += "Node @v" + i + " excess: " + node[i].e + " inQueue: " + node[i].inQueue + "\n";
+					}
+				}
+
+				Graph.log2("Time: " + seconds + " s/20");
+				Graph.log2("sf: " + sf + ", tf: " + tf);
+				Graph.log2(threadStates);
+				Graph.log2(nodesWIthExcess);
+			}
+
+
+			if (Math.abs(sf) == tf) {
+				for (int i = 0; i < nthreads; ++i)
+					work[i].interrupt();	
+				break;
+			}
+		}
 
 		for (int i = 0; i < nthreads; ++i)
 			try {
 				work[i].join();
+				Graph.log(work[i].getName() + " joined");
 			} catch (Exception e) {
 				System.out.println("" + e);
 			}
@@ -162,6 +208,8 @@ class Node {
 	int		e;
 	int		i;
 	Node	next;
+	Node	prev;
+	Boolean	inQueue = false;
 	LinkedList<Edge>	adj;
 	private ReentrantLock lock;
 
@@ -209,7 +257,8 @@ class Edge {
 }
 
 class Work extends Thread {
-	Node excess; 	// nodes with excess preflow Node s
+	Node excessHead; 	// nodes with excess preflow Node s
+	Node excessTail;
 	Node s; 		// source node
 	Node t; 		// sink node
 	Graph g;
@@ -222,58 +271,68 @@ class Work extends Thread {
 	}
 	
 	public void run() {
-		Node u = excess;
+		Graph.log(Thread.currentThread().getName() + " running");
+		Node u = null;
 		Node v = null;
 		Edge a = null;
-
+		
 		while (true) {
 			synchronized (this) {
+				u = excessHead;
 				if (u == null) {
-					break;
+					Graph.log(Thread.currentThread().getName() + " waiting");
+					try {
+						this.wait();
+						Graph.log(Thread.currentThread().getName() + " woke up");
+						continue;
+					} catch (InterruptedException e) {
+						Thread.currentThread().interrupt();
+						Graph.log("Interrupted");
+						break;
+					}
 				}
-
 			}
 
 			boolean pushed = false;
 
 			ListIterator<Edge> iter = u.adj.listIterator();
+			int len = u.adj.size();
+			int c = 1;
 			while (iter.hasNext() && u.e > 0) {
 				a = iter.next();
 				v = g.other(a, u);
 
-				Graph.log("Tried pushing: @u" + u.i + " -> @v" + v.i);
+				Graph.log("Tried pushing edge " + c++ + "/" + len + ": @u" + u.i + " -> @v" + v.i);
 				Graph.log("@u" + u.i + " (h: " + u.h + ", e: " + u.e + "), @v" + v.i + " (h: "+ v.h + ", e: " + v.e + ")");
-				Graph.log("edge: " + a.f + "/" + a.c + "\n");
+				Graph.log("edge flow/cap: " + a.f + "/" + a.c + "\n");
+				g.lockNodes(u, v);
 				if (g.push(u, v, a)) {
 					Graph.log("Pushed to node @v" + v.i +" from @v" + u.i);
 					pushed = true;
+					
 					g.allocateWorkToNextThread(v);
 				}
+				g.unlockNodes(u, v);
 			}
 
 			if (!pushed && u.e > 0)
 				u.relabel();
-			
-			if (u.e == 0) {
-				Graph.log("@u" + u.i + " has no excess, go to next node @u");
-				if (u.next != null)
-					Graph.log(""+u.next.i);
-				else
-					Graph.log("void");
-				var temp = u;
-				u = u.next;
-				temp.next = null;
 
+			synchronized(this) {
+				if (u.e == 0) {
+					Graph.log("@u" + u.i + " has no excess, go to next node @u" + (u.next != null ? u.next.i : "NULL"));
+	
+					// remove from excess list
+					excessHead = u.next;
+					u.next = null;
+					if (excessHead != null)
+						excessHead.prev = null;
+					else
+						excessTail = null;
 
-				// int i = 0;
-				// var temp2 = temp;
-				// while (temp2.next != null) {
-				// 	i++;
-				// 	temp2 = temp2.next;
-				// }
-				// Graph.log("excess list is " + i + " long.");
-			}
-			
+					u.inQueue = false;
+				}
+			}			
     	} 
 	}
 
@@ -282,16 +341,36 @@ class Work extends Thread {
 	}
 
 	public synchronized void addExcess(Node u) {
-		if (excess == null || u.i != excess.i) {
-			if (u.next != null) {
-				// Exists in other excess
-				return;
-			}
-			u.next = this.excess;
-			this.excess = u;
-			Graph.log("Adding node @v" + u.i + " to excess. " + excess);
-			run();
+		Graph.log("Trying to add node @v" + u.i + " to excess.");
+		if (u.inQueue) {
+			Graph.log("Node @v" + u.i + " already in excess.");
+			return;
 		}
+
+		u.inQueue = true;
+
+		if (excessHead == null) {
+			excessHead = u;
+			excessTail = u;
+		} else {
+			excessTail.next = u;
+			excessTail = u;
+		}
+		Graph.log("Adding node @v" + u.i + " to excess.");
+		synchronized (this) {
+			this.notify();
+		}
+
+		// if (excess == null || u.i != excess.i) {
+		// 	if (u.inQueue) {
+		// 		// Exists in other excess
+		// 		return;
+		// 	}
+		// 	u.next = this.excess;
+		// 	this.excess = u;
+		// 	Graph.log("Adding node @v" + u.i + " to excess. " + excess);
+		// 	run();
+		// }
 	}
 }
 
@@ -310,13 +389,11 @@ class Preflow {
 		int nthreads = 10;
 		Graph	g;
 
-		System.out.println("Starting main");
-
 		n = s.nextInt();
 		m = s.nextInt();
 		s.nextInt();
 		s.nextInt();
-		System.out.println("Starting main 2");
+
 		Node[] node = new Node[n];
 		Edge[] edge = new Edge[m];
 		for (i = 0; i < n; i += 1)
@@ -332,9 +409,14 @@ class Preflow {
 		}
 
 		g = new Graph(node, edge);
-		System.out.println("Created graph");
+		Graph.log("Created graph");
+		f = -1;
 
-		f = g.preflow(0, n-1, nthreads);
+		try {
+			f = g.preflow(0, n-1, nthreads);
+		} catch (Exception e) {
+			System.out.println("" + e.getMessage());
+		}
 		double	end = System.currentTimeMillis();
 		System.out.println("t = " + (end - begin) / 1000.0 + " s");
 		System.out.println("f = " + f);
