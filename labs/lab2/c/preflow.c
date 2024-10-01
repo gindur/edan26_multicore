@@ -29,7 +29,6 @@
  
 #include <alloca.h>
 #include <assert.h>
-#include <bits/pthreadtypes.h>
 #include <ctype.h>
 #include <stdarg.h>
 #include <stdio.h>
