@@ -698,17 +698,17 @@ int preflow(graph_t* g)
 
 		if (-s->e == t->e) {
 			allDone = 1;
-			pthread_mutex_unlock(&mutex);
 			pthread_cond_broadcast(&cond_worker);
+			pthread_mutex_unlock(&mutex);
 			printGraphState(g);
 			pr("All done: s->e = %d, t->e = %d\n", s->e, t->e);
 			break;
 		}
 
 		waitingWorkers = 0;
+		pthread_cond_broadcast(&cond_worker);
 		pthread_mutex_unlock(&mutex);
 
-		pthread_cond_broadcast(&cond_worker);
 	}
 
 	for (int i = 0; i< nthreads; i += 1) {
