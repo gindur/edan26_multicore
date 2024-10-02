@@ -38,6 +38,7 @@
 #include <pthread.h>
 
 #define PRINT	0	/* enable/disable prints. */
+#define FORSETE
 
 /* the funny do-while next clearly performs one iteration of the loop.
  * if you are really curious about why there is a loop, please check
@@ -111,6 +112,7 @@ struct graph_t {
 
 struct worker_t {
 	int			i;
+	int			nbrJobs;
 	graph_t*	g;
 	node_t*		excess;	/* nodes with e > 0 except s,t.	*/
 	work_t*		work;
@@ -397,6 +399,7 @@ static void connect(node_t* u, node_t* v, int c, edge_t* e)
 	add_edge(v, e);
 }
 
+#ifdef FORSETE
 static graph_t* new_graph(FILE* in, int n, int m, int nthreads)
 {
 	graph_t*	g;
@@ -460,6 +463,7 @@ static graph_t* new_graph(FILE* in, int n, int m, int nthreads)
 
 	return g;
 }
+#endif
 
 static void push(graph_t* g, node_t* u, node_t* v, edge_t* e, int df)
 {
@@ -529,6 +533,7 @@ void *work(void* args)
 	while (1) {
 		node_t* u = worker->excess;
 		while (u != NULL) {
+			worker->nbrJobs++;
 			u_e = u->e; //excess flow of u
 			p = u->edge;
 			int pushed = 0;
@@ -705,10 +710,15 @@ int preflow(graph_t* g)
 			break;
 		}
 
+		pthread_cond_broadcast(&cond_worker);
+
 		waitingWorkers = 0;
 		pthread_cond_broadcast(&cond_worker);
 		pthread_mutex_unlock(&mutex);
+	}
 
+	for (int i = 0; i < nthreads; i++) {
+		printf("%d\n", g->worker[i].nbrJobs);
 	}
 
 	for (int i = 0; i< nthreads; i += 1) {
@@ -741,6 +751,7 @@ static void free_graph(graph_t* g)
 	free(g);
 }
 
+#ifdef FORSETE
 int main(int argc, char* argv[])
 {
 	FILE*		in;	/* input file set to stdin	*/
@@ -760,7 +771,7 @@ int main(int argc, char* argv[])
 	next_int();
 	next_int();
 
-	int nthreads = 2;
+	int nthreads = 10;
 
 	g = new_graph(in, n, m, nthreads);
 
@@ -774,3 +785,4 @@ int main(int argc, char* argv[])
 
 	return 0;
 }
+#endif
