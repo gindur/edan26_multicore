@@ -37,7 +37,7 @@
 
 #include <pthread.h>
 
-#define PRINT	1	/* enable/disable prints. */
+#define PRINT	0	/* enable/disable prints. */
 
 /* the funny do-while next clearly performs one iteration of the loop.
  * if you are really curious about why there is a loop, please check
@@ -501,9 +501,16 @@ void allocateNodeToThread(graph_t* g, node_t* u)
 		worker_t* worker = &g->worker[index];
 		u->next = worker->excess;
 		worker->excess = u;
-		pr("added node %d to thread %d\n", id(g, u), index);
+		pr("added node %d with excess %d to thread %d\n", id(g, u),u->e, index);
 	} else {
 		pr("skipping adding s or t to excess list\n");
+	}
+}
+
+void *printGraphState(graph_t* g){
+	for (int i = 0; i < g->n; i += 1) {
+		node_t *node = &g->v[i];
+		pr("Node %d: h=%d, e=%d\n", i, node->h, node->e);
 	}
 }
 
@@ -539,7 +546,7 @@ void *work(void* args)
 					b = -1;
 				}
 
-				pr("@T%d: looking at next edge %d -> %d, u_e = %d\n", worker->i, id(g, u), id(g, v), u_e);
+				//pr("@T%d: looking at next edge %d -> %d, u_e = %d\n", worker->i, id(g, u), id(g, v), u_e);
 
 				if (u->h == 0) {
 					//do reabel
@@ -548,14 +555,15 @@ void *work(void* args)
 					pushed = 1;
 					break;
 				}
-
-				if (u->h > v->h && abs(u->e) > 0 && b * e->f < e->c) {
-					if (u == e->u) {
+				// print if statement
+				//pr("@T%d: chckecking if: u->h = %d > v->h = %d && abs(u_e) = %d > 0 && b * e->f = %d < e->c = %d\n", worker->i, u->h, v->h, abs(u_e), b*e->f, e->c);
+				if (u->h > v->h && abs(u_e) > 0 && b * e->f < e->c) {
+					if (b ==  1) {
 						df = MIN(u_e, e->c - e->f);
 					} else {
-						df = MIN(u_e, e->c + e->f);
+						df = -MIN(u_e, e->c + e->f); //This flow must be negative
 					}
-					u_e -= df;
+					u_e -= abs(df);
 					create_push_work(&worker->work, u, v, e, df);
 					pr("@T%d: create push work from node @%d to node @%d, df = %d\n", worker->i, id(g, u), id(g, v), df);
 					pushed = 1;
@@ -564,7 +572,8 @@ void *work(void* args)
 
 
 			//2. if not pushed, reabel
-			if (!pushed){
+			if (!pushed && u_e> 0) {
+				pr("@T%d: no push possible, relabel node @%d\n", worker->i, id(g, u));
 				create_relabel_work(&worker->work, u);
 			}
 			node_t* temp = u;
@@ -691,6 +700,7 @@ int preflow(graph_t* g)
 			allDone = 1;
 			pthread_mutex_unlock(&mutex);
 			pthread_cond_broadcast(&cond_worker);
+			printGraphState(g);
 			pr("All done: s->e = %d, t->e = %d\n", s->e, t->e);
 			break;
 		}
