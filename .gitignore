@@ -6,6 +6,7 @@
 *.diff
 *.err
 *.out
+*.txt
 
 # Build directories
 target/
