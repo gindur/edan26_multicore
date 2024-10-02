@@ -58,7 +58,7 @@
  * public.
  *
  * using typedef like this means we can avoid writing 'struct' in 
- * every declaration. no new type is atomic_introduded and only a shorter name.
+ * every declaration. no new type is introduded and only a shorter name.
  *
  */
 
@@ -73,7 +73,7 @@ struct list_t {
 };
 
 struct node_t {
-	int		h;	/* height.			*/
+	atomic_int		h;	/* height.			*/
 	atomic_int		e;	/* excess flow.			*/
 	list_t*		edge;	/* adjacency list.		*/
 	node_t*		next;	/* with excess preflow.		*/
@@ -87,8 +87,8 @@ struct edge_t {
 };
 
 struct graph_t {
-	atomic_int		n;	/* nodes.			*/
-	atomic_int		m;	/* edges.			*/
+	int		n;	/* nodes.			*/
+	int		m;	/* edges.			*/
 	node_t*		v;	/* array of n nodes.		*/
 	edge_t*		e;	/* array of m edges.		*/
 	node_t*		s;	/* source.			*/
@@ -123,7 +123,7 @@ static char* progname;
 
 #if PRINT
 
-static atomic_int id(graph_t* g, node_t* v)
+static int id(graph_t* g, node_t* v)
 {
 	/* return the node index for v.
 	 *
@@ -191,10 +191,10 @@ void error(const char* fmt, ...)
 	exit(1);
 }
 
-static atomic_int next_int()
+static int next_int()
 {
-        atomic_int    x;
-        atomic_int     c;
+        int    x;
+        int     c;
 
 	/* this is like Java's nextInt to get the next integer.
 	 *
@@ -281,7 +281,7 @@ static void add_edge(node_t* u, edge_t* e)
 	u->edge = p;
 }
 
-static void connect(node_t* u, node_t* v, atomic_int c, edge_t* e)
+static void connect(node_t* u, node_t* v, int c, edge_t* e)
 {
 	/* connect two nodes by putting a shared (same object)
 	 * in their adjacency lists.
@@ -296,15 +296,15 @@ static void connect(node_t* u, node_t* v, atomic_int c, edge_t* e)
 	add_edge(v, e);
 }
 
-static graph_t* new_graph(FILE* in, atomic_int n, atomic_int m)
+static graph_t* new_graph(FILE* in, int n, int m)
 {
 	graph_t*	g;
 	node_t*		u;
 	node_t*		v;
-	atomic_int		i;
-	atomic_int		a;
-	atomic_int		b;
-	atomic_int		c;
+	int		i;
+	int		a;
+	int		b;
+	int		c;
 	
 	g = xmalloc(sizeof(graph_t));
 
@@ -366,7 +366,7 @@ static node_t* leave_excess(graph_t* g)
 
 static void push(graph_t* g, node_t* u, node_t* v, edge_t* e)
 {
-	atomic_int		d;	/* remaining capacity of the edge. */
+	int		d;	/* remaining capacity of the edge. */
 
 	pr("push from %d to %d: ", id(g, u), id(g, v));
 	pr("f = %d, c = %d, so ", e->f, e->c);
@@ -427,14 +427,14 @@ static node_t* other(node_t* u, edge_t* e)
 		return e->u;
 }
 	
-atomic_int preflow(graph_t* g)
+int preflow(graph_t* g)
 {
 	node_t*		s;
 	node_t*		u;
 	node_t*		v;
 	edge_t*		e;
 	list_t*		p;
-	atomic_int		b;
+	int		b;
 
 	s = g->s;
 	s->h = g->n;
@@ -503,7 +503,7 @@ atomic_int preflow(graph_t* g)
 
 static void free_graph(graph_t* g)
 {
-	atomic_int		i;
+	int		i;
 	list_t*		p;
 	list_t*		q;
 
@@ -521,14 +521,14 @@ static void free_graph(graph_t* g)
 }
 
 volatile int hello;
-atomic_int main(int argc, char* argv[])
+int main(int argc, char* argv[])
 {
 	FILE*		in;	/* input file set to stdin	*/
 	graph_t*	g;	/* undirected graph. 		*/
-	atomic_int		f;	/* output from preflow.		*/
-	atomic_int		n;	/* number of nodes.		*/
-	atomic_int		m;	/* number of edges.		*/
-	atomic_int 		test;
+	int		f;	/* output from preflow.		*/
+	int		n;	/* number of nodes.		*/
+	int		m;	/* number of edges.		*/
+	int 		test;
 
 	// m = 0;
 	// hello &= 0x1234;
