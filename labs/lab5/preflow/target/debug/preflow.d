@@ -1,1 +1,1 @@
-/home/js/Tresors/edan26/labs/lab5/preflow/target/debug/preflow: /home/js/Tresors/edan26/labs/lab5/preflow/src/main.rs
+/home/Kojjan/Documents/School/EDAN26\ -\ Multicore\ Programming/edan26_multicore/labs/lab5/preflow/target/debug/preflow: /home/Kojjan/Documents/School/EDAN26\ -\ Multicore\ Programming/edan26_multicore/labs/lab5/preflow/src/main.rs /home/Kojjan/Documents/School/EDAN26\ -\ Multicore\ Programming/edan26_multicore/labs/lab5/preflow/src/parallel.rs /home/Kojjan/Documents/School/EDAN26\ -\ Multicore\ Programming/edan26_multicore/labs/lab5/preflow/src/sequential.rs
